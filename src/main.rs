@@ -33,9 +33,9 @@ async fn main() -> Result<(), Error> {
         .about("Creates a uinput device from a BMW idrive controller")
         .author("Brendan Le Foll, brendan@fridu.org")
         .arg(
-            Arg::new("canif")
+            Arg::new(CAN_IF_ARG)
                 .short('c')
-                .long("canif") // allow --canif
+                .long(CAN_IF_ARG) // allow --canif
                 .takes_value(true)
                 .help("can interface to use")
                 .default_value(CAN_IF_DEFAULT)
