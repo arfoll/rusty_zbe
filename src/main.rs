@@ -1,12 +1,18 @@
-//use futures_timer::Delay;
-//use std::time::Duration;
 use futures_util::stream::StreamExt;
 use tokio::time::{sleep, Duration};
-use tokio_socketcan::{CANFrame, CANSocket, Error};
+use tokio_socketcan::{CANFilter, CANFrame, CANSocket, Error};
+
+// Random constants
+// CAN ID in extended format is 29bit max in extended format
+const IDRIVE_CAN_DATA_ID: u32 = 0x25B;
+const IUK_CAN_NM3_MSG_ID: u32 = 0x010;
+const IUK_CAN_NM3_MSG_PAYLOAD: &'static [u8] =  &[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
+// /usr/include/linux/can.h:#define CAN_SFF_MASK 0x000007FFU /* standard frame format (SFF) */
+const CAN_SFF_MASK: u32 = 0x000007FF;
 
 async fn keepalive(canif:String) {
     let cansock_tx = CANSocket::open(&canif).unwrap();
-    let nm3frame = CANFrame::new(0x1, &[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08], false, false).unwrap();
+    let nm3frame = CANFrame::new(IDRIVE_CAN_DATA_ID, IUK_CAN_NM3_MSG_PAYLOAD, false, false).unwrap();
 
     loop {
         println!("Writing on vcan0");
@@ -15,7 +21,6 @@ async fn keepalive(canif:String) {
         nm3.await;
         sleep(Duration::from_millis(1000)).await;
         println!("Waiting 3 seconds");
-        //Delay::new(Duration::from_secs(3)).await;
     }
 }
 
@@ -31,15 +36,16 @@ async fn main() -> Result<(), Error> {
     // doesn't support copy so I have to do this twice? Berk
     let mut cansock_rx = CANSocket::open(&canif).unwrap();
 
-// LOOP not needed!
+    let idrive_filter = CANFilter::new(IDRIVE_CAN_DATA_ID, CAN_SFF_MASK).unwrap();
+    let can_filters = [idrive_filter];
+
+    cansock_rx.set_filter(&can_filters);
+
+// why is LOOP not needed?
 // Use BCM to filter messages?
-    loop {
-//        let frame = CANFrame::new(0xFF, &[0], false, false).unwrap();
-//        cansock.write_frame(frame)?.await?;
-//        sleep(Duration::from_millis(1000)).await;
-        while let Some(next) = cansock_rx.next().await {
-            println!("{:#?}", next);
-        }
-        println!("endofloop!!!");
+    while let Some(next) = cansock_rx.next().await {
+        println!("{:#?}", next);
     }
+
+    Ok(())
 }
