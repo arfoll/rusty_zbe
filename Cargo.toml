@@ -2,6 +2,12 @@
 name = "rusty_zbe"
 version = "0.0.1"
 authors = ["Brendan Le Foll <brendan@fridu.org>"]
+edition = "2021"
 
 [dependencies]
-clap = "3.1.6"
+clap = "3.1.18"
+futures = "0.3"
+futures-util = "0.3"
+tokio = { version= "1", features = ["net"] }
+tokio-socketcan = "0.3.1"
+uinput-tokio = "0.1.35"
