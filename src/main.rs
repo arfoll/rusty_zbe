@@ -44,7 +44,7 @@ async fn main() -> Result<(), Error> {
          )
          .get_matches();
 
-    let mut canif: String = app.value_of(CAN_IF_ARG).unwrap().to_string();
+    let canif: String = app.value_of(CAN_IF_ARG).unwrap().to_string();
     println!("Going to use, {}!", canif);
     // wtf? Why can I not clone directly at least?
     let caniflocal = canif.clone();
@@ -54,6 +54,7 @@ async fn main() -> Result<(), Error> {
         keepalive(caniflocal).await;
     });
 
+    // on arch the udev uinput detection seems brocken in the lib -> need to investigate
     let mut device = uinput_tokio::open("/dev/uinput")
         .unwrap()
         .name("test")
