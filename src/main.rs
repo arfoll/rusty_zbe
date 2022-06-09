@@ -1,6 +1,8 @@
 use bitflags::bitflags;
 use clap::{Arg, Command};
 use futures_util::stream::StreamExt;
+use lazy_static::lazy_static;
+use std::collections::HashMap;
 use tokio::time::{sleep, Duration};
 use tokio_socketcan::{CANFilter, CANFrame, CANSocket, Error};
 use uinput_tokio::event::keyboard;
@@ -13,6 +15,15 @@ bitflags! {
         const OPTION = 0b000000010000000000000000;
         const COM =    0b000010000000000000000000;
     }
+}
+
+lazy_static! {
+    static ref KEYMAPING: HashMap<&'static ZbeKeys, &'static keyboard::Key> = {
+        let mut map = HashMap::new();
+        map.insert(&ZbeKeys::MAP, &keyboard::Key::M);
+        map.insert(&ZbeKeys::OPTION, &keyboard::Key::O);
+        map
+    };
 }
 
 // CAN ID in extended format is 29bit max in extended format
@@ -110,10 +121,9 @@ async fn main() -> Result<(), Error> {
             // truncating from bits doesn't need unwrap
             let derived_data: ZbeKeys = ZbeKeys::from_bits_truncate(canbitdata);
 
-            if derived_data == ZbeKeys::MAP {
-                device.click(&keyboard::Key::M).await.unwrap();
-            } else if derived_data == ZbeKeys::COM {
-                device.click(&keyboard::Key::O).await.unwrap();
+            if KEYMAPING.contains_key(&derived_data) {
+                let key = KEYMAPING.get(&derived_data).unwrap();
+                device.click(*key).await.unwrap();
             }
 
             // Not sure why you need to but if you dont sync then udev will wait for 4 chars to arrive and then send
