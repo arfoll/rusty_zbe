@@ -11,17 +11,27 @@ bitflags! {
     #[derive(Default)]
     struct ZbeKeys:u64 {
         const MAP =    0b0001;
-        const MEDIA =  0b000000000000100000000000;
-        const OPTION = 0b000000010000000000000000;
+        const NAV =    0b100000000000;
         const COM =    0b000010000000000000000000;
+        const MEDIA =  0b000000000000100000000000;
+        const MENU =   0b00000100000000000000000000000000;
+        const BACK =   0b00100000000000000000000000000000;
+        const OPTION = 0b00000000000000010000000000000000;
+        const ENTER = 0b100000; // FIXME
     }
 }
 
 lazy_static! {
     static ref KEYMAPING: HashMap<&'static ZbeKeys, &'static keyboard::Key> = {
         let mut map = HashMap::new();
-        map.insert(&ZbeKeys::MAP, &keyboard::Key::M);
+        map.insert(&ZbeKeys::MAP, &keyboard::Key::A);
+        map.insert(&ZbeKeys::NAV, &keyboard::Key::N);
+        map.insert(&ZbeKeys::COM, &keyboard::Key::C);
+        map.insert(&ZbeKeys::MEDIA, &keyboard::Key::E);
+        map.insert(&ZbeKeys::MENU, &keyboard::Key::M);
+        map.insert(&ZbeKeys::BACK, &keyboard::Key::Esc);
         map.insert(&ZbeKeys::OPTION, &keyboard::Key::O);
+        map.insert(&ZbeKeys::ENTER, &keyboard::Key::Enter);
         map
     };
 }
@@ -48,7 +58,7 @@ async fn keepalive(canif:String) {
     let nm3frame = CANFrame::new(IUK_CAN_NM3_MSG_ID, IUK_CAN_NM3_MSG_PAYLOAD, false, false).unwrap();
 
     loop {
-        println!("Writing on vcan0");
+        println!("Writing on {}", canif);
         // why do I need to unwrap the result and '?' doesn't work in a fn?
         let nm3 = cansock_tx.write_frame(nm3frame).unwrap();
         nm3.await;
