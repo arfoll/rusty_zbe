@@ -1,8 +1,17 @@
+use bitflags::bitflags;
 use clap::{Arg, Command};
 use futures_util::stream::StreamExt;
 use tokio::time::{sleep, Duration};
 use tokio_socketcan::{CANFilter, CANFrame, CANSocket, Error};
 use uinput_tokio::event::keyboard;
+
+bitflags! {
+    #[derive(Default)]
+    struct ZbeKeys:u64 {
+        const MAP = 0b0000000000000001;
+        const MEDIA = 0b0000100000000000;
+    }
+}
 
 // CAN ID in extended format is 29bit max in extended format
 const IDRIVE_CAN_DATA_ID: u32 = 0x25B;
@@ -13,6 +22,12 @@ const IUK_CAN_NM3_TIMEOUT: u64 = 1400;
 const CAN_SFF_MASK: u32 = 0x000007FF;
 const CAN_IF_ARG: &str = "canif";
 const CAN_IF_DEFAULT: &str = "can0";
+
+fn read_be_u64(input: &mut &[u8]) -> u64 {
+    let (int_bytes, rest) = input.split_at(std::mem::size_of::<u64>());
+    *input = rest;
+    u64::from_be_bytes(int_bytes.try_into().unwrap())
+}
 
 async fn keepalive(canif:String) {
     let cansock_tx = CANSocket::open(&canif).unwrap();
@@ -80,9 +95,24 @@ async fn main() -> Result<(), Error> {
     while let Some(next) = cansock_rx.next().await {
         println!("{:#?}", next);
 
-        device.click(&keyboard::Key::B).await.unwrap();
-        // Not sure why you need to but if you dont sync then udev will wait for 4 chars to arrive and then send
-        device.synchronize().await.unwrap();
+        // RAW can frame without ID
+        let canframe = next.unwrap();
+        let mut candata = canframe.data();
+
+        // our CAN data should always be 8 bytes, otherwise ignore it
+        if candata.len() == 8 {
+            println!("{:X?}", candata);
+            let canbitdata = read_be_u64(&mut candata);
+            println!("{:X}", canbitdata);
+            // truncating from bits doesn't need unwrap
+            let derived_data: ZbeKeys = ZbeKeys::from_bits_truncate(canbitdata);
+            if derived_data == ZbeKeys::MAP {
+                println!("MAP is pressed!!!");
+                device.click(&keyboard::Key::B).await.unwrap();
+            }
+            // Not sure why you need to but if you dont sync then udev will wait for 4 chars to arrive and then send
+            device.synchronize().await.unwrap();
+        }
     }
 
     Ok(())
