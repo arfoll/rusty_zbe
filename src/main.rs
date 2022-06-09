@@ -8,16 +8,19 @@ use uinput_tokio::event::keyboard;
 bitflags! {
     #[derive(Default)]
     struct ZbeKeys:u64 {
-        const MAP = 0b0000000000000001;
-        const MEDIA = 0b0000100000000000;
+        const MAP =    0b0001;
+        const MEDIA =  0b000000000000100000000000;
+        const OPTION = 0b000000010000000000000000;
+        const COM =    0b000010000000000000000000;
     }
 }
 
 // CAN ID in extended format is 29bit max in extended format
 const IDRIVE_CAN_DATA_ID: u32 = 0x25B;
-const IUK_CAN_NM3_MSG_ID: u32 = 0x010;
-const IUK_CAN_NM3_MSG_PAYLOAD: &'static [u8] =  &[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
-const IUK_CAN_NM3_TIMEOUT: u64 = 1400;
+const IUK_CAN_NM3_MSG_ID: u32 = 0x510;
+const IUK_CAN_NM3_MSG_PAYLOAD: &'static [u8] =  &[0x40, 0x10, 0x40, 0x00, 0x0F, 0x9F, 0x19, 0x00];
+// Not clear what timeout should be, but 1s seems safe
+const IUK_CAN_NM3_TIMEOUT: u64 = 1000;
 // /usr/include/linux/can.h:#define CAN_SFF_MASK 0x000007FFU /* standard frame format (SFF) */
 const CAN_SFF_MASK: u32 = 0x000007FF;
 const CAN_IF_ARG: &str = "canif";
@@ -106,10 +109,13 @@ async fn main() -> Result<(), Error> {
             println!("{:X}", canbitdata);
             // truncating from bits doesn't need unwrap
             let derived_data: ZbeKeys = ZbeKeys::from_bits_truncate(canbitdata);
+
             if derived_data == ZbeKeys::MAP {
-                println!("MAP is pressed!!!");
-                device.click(&keyboard::Key::B).await.unwrap();
+                device.click(&keyboard::Key::M).await.unwrap();
+            } else if derived_data == ZbeKeys::COM {
+                device.click(&keyboard::Key::O).await.unwrap();
             }
+
             // Not sure why you need to but if you dont sync then udev will wait for 4 chars to arrive and then send
             device.synchronize().await.unwrap();
         }
