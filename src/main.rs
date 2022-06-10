@@ -3,9 +3,11 @@ use clap::{Arg, Command};
 use failure::format_err;
 use futures_util::stream::StreamExt;
 use lazy_static::lazy_static;
+use uinput_tokio::Device;
 use std::collections::HashMap;
 use std::error::Error;
-use tokio::time::{sleep, Duration};
+use tokio::time::{Duration, interval};
+use tokio::select;
 use tokio_socketcan::{CANFilter, CANFrame, CANSocket};
 use uinput_tokio::event::keyboard;
 
@@ -51,16 +53,41 @@ const CAN_SFF_MASK: u32 = 0x000007FF;
 const CAN_IF_ARG: &str = "canif";
 const CAN_IF_DEFAULT: &str = "can0";
 
-async fn keepalive(canif: &str) -> Result<(), Box<dyn Error>> {
-    let cansock_tx = CANSocket::open(canif)?;
+async fn can_task(mut can: CANSocket, mut device: Device) -> Result<(), Box<dyn Error>> {
+    let mut keepalive = interval(Duration::from_millis(IUK_CAN_NM3_TIMEOUT));
     let nm3frame = CANFrame::new(IUK_CAN_NM3_MSG_ID, &IUK_CAN_NM3_MSG_PAYLOAD, false, false)?;
 
     loop {
-        println!("Writing on {}", canif);
-        cansock_tx.write_frame(nm3frame)?.await?;
-        println!("Waiting 1 seconds");
-        sleep(Duration::from_millis(IUK_CAN_NM3_TIMEOUT)).await;
+        select! {
+            Some(can_frame) = can.next() => {
+                // RAW can frame without ID
+                let can_frame = can_frame?;
+                let can_data = can_frame.data();
+
+                // our CAN data should always be 8 bytes, otherwise ignore it
+                if can_data.len() == 8 {
+                    println!("{:X?}", can_data);
+                    let canbitdata = u64::from_be_bytes(can_data.try_into()?);
+                    println!("{:X}", canbitdata);
+                    let derived_data: ZbeKeys = ZbeKeys::from_bits_truncate(canbitdata);
+
+                    if let Some(key) = KEYMAPING.get(&derived_data) {
+                        device.click(*key).await.unwrap();
+                        // Not sure why you need to but if you dont sync then udev will wait for 4 chars to arrive and then send
+                        device.synchronize().await.unwrap();
+                    }
+                }
+                
+            }
+            _ = keepalive.tick() => {
+                println!("Sending keepalive message");
+                can.write_frame(nm3frame)?.await?;
+                println!("Waiting 1 seconds");                
+            }
+
+        }
     }
+
 }
 
 #[tokio::main]
@@ -79,53 +106,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
         )
         .get_matches();
 
-    let canif = app.value_of(CAN_IF_ARG).unwrap();
-    println!("Going to use, {}!", canif);
-    let canif_local = canif.to_string();
-    tokio::spawn(async move {
-        if let Err(e) = keepalive(canif_local.as_str()).await {
-            println!("Error: {:?}", e);
-        }
-    });
+    let can_interface = app.value_of(CAN_IF_ARG).unwrap();
+    println!("Going to use, {}!", can_interface);
+    let can = CANSocket::open(can_interface)?;
+    println!("Going to use, {}!", can_interface);
+    let can_filters = [CANFilter::new(IDRIVE_CAN_DATA_ID, CAN_SFF_MASK)?];
+    can.set_filter(&can_filters)?;
 
     // on arch the udev uinput detection seems brocken in the lib -> need to investigate
-    let mut device = uinput_tokio::open("/dev/uinput")
-        .map_err(|err| format_err!("{:?}", err))? // Unfortunately uinput_tokio does not implement std::error::Error trait
+    let device = uinput_tokio::open("/dev/uinput")
+        .map_err(|err| format_err!("{:?}", err))? // Unfortunately uinput_tokio does not implement std::error::Error trait (https://github.com/keyboard-mapping/uinput-tokio/issues/1)
         .name("test")
         .map_err(|err| format_err!("{:?}", err))?
         .create()
         .await
         .map_err(|err| format_err!("{:?}", err))?;
 
-    let mut cansock_rx = CANSocket::open(canif)?;
-    println!("Going to use, {}!", canif);
-
-    let can_filters = [CANFilter::new(IDRIVE_CAN_DATA_ID, CAN_SFF_MASK)?];
-    cansock_rx.set_filter(&can_filters)?;
-
-    // why is LOOP not needed?
-    // Use BCM to filter messages?
-    while let Some(next) = cansock_rx.next().await {
-        println!("{:#?}", next);
-
-        // RAW can frame without ID
-        let canframe = next?;
-        let candata = canframe.data();
-
-        // our CAN data should always be 8 bytes, otherwise ignore it
-        if candata.len() == 8 {
-            println!("{:X?}", candata);
-            let canbitdata = u64::from_be_bytes(candata.try_into()?);
-            println!("{:X}", canbitdata);
-            let derived_data: ZbeKeys = ZbeKeys::from_bits_truncate(canbitdata);
-
-            if let Some(key) = KEYMAPING.get(&derived_data) {
-                device.click(*key).await.unwrap();
-                // Not sure why you need to but if you dont sync then udev will wait for 4 chars to arrive and then send
-                device.synchronize().await.unwrap();
-            }
-        }
-    }
-
-    Ok(())
+   can_task(can, device).await?;
+   Ok(())
 }
