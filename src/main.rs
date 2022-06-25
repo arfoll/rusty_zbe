@@ -72,22 +72,22 @@ async fn can_task(mut can: CANSocket, mut device: Device) -> Result<(), Box<dyn 
                     let derived_data: ZbeKeys = ZbeKeys::from_bits_truncate(canbitdata);
 
                     if let Some(key) = KEYMAPING.get(&derived_data) {
-                        device.click(*key).await.unwrap();
+                        println!("GONNA HIT DAT KEY!");
+                        //device.click(*key).await.unwrap();
+                        device.click(&keyboard::Key::H).await.unwrap();
                         // Not sure why you need to but if you dont sync then udev will wait for 4 chars to arrive and then send
                         device.synchronize().await.unwrap();
                     }
                 }
-                
+
             }
             _ = keepalive.tick() => {
                 println!("Sending keepalive message");
                 can.write_frame(nm3frame)?.await?;
-                println!("Waiting 1 seconds");                
+                println!("Waiting 1 seconds");
             }
-
         }
     }
-
 }
 
 #[tokio::main]
@@ -116,8 +116,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // on arch the udev uinput detection seems brocken in the lib -> need to investigate
     let device = uinput_tokio::open("/dev/uinput")
         .map_err(|err| format_err!("{:?}", err))? // Unfortunately uinput_tokio does not implement std::error::Error trait (https://github.com/keyboard-mapping/uinput-tokio/issues/1)
-        .name("test")
+        .name("rustyzbe")
         .map_err(|err| format_err!("{:?}", err))?
+        .event(uinput_tokio::event::Keyboard::All)
+        .unwrap()
         .create()
         .await
         .map_err(|err| format_err!("{:?}", err))?;
